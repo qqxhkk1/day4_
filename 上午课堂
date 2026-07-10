@@ -31,3 +31,109 @@ print("region单列类型：", type(s_region))
 df_part = orders[["order_id", "product", "quantity"]]
 print("三列数据类型：", type(df_part))
 print()
+
+slice_iloc = orders.iloc[4:9, 0:4]
+print(slice_iloc)
+print()
+
+east_df = orders.loc[orders["region"] == "华东", ["order_id", "product", "member_level"]]
+print(east_df)
+print()
+
+analysis = orders.assign(
+    # 原始金额
+    gross_amount = lambda x: x["quantity"] * x["unit_price"],
+    # 会员折扣：金卡0.1，银卡0.05，普通0
+    member_discount = lambda x: np.where(
+        x["member_level"] == "金卡", 0.10,
+        np.where(x["member_level"] == "银卡", 0.05, 0.00)
+    ),
+    # 应付金额=原价*(1-会员折扣)*(1-优惠券折扣)
+    payable_amount = lambda x: (x["gross_amount"] * (1 - x["member_discount"]) * (1 - x["coupon_rate"])).round(2),
+    # 运费：应付≥1000免运费，否则20
+    shipping_fee = lambda x: np.where(x["payable_amount"] >= 1000, 0, 20),
+    # 最终实付金额
+    final_amount = lambda x: (x["payable_amount"] + x["shipping_fee"]).round(2)
+)
+
+# 展示前8行核心结算字段
+show_cols = ["order_id", "quantity", "unit_price", "gross_amount", "member_discount", "payable_amount", "shipping_fee", "final_amount"]
+print(analysis[show_cols].head(8))
+print()
+
+# 条件1：地区华东 或 华南
+cond1 = (analysis["region"] == "华东") | (analysis["region"] == "华南")
+# 条件2：最终金额≥700
+cond2 = analysis["final_amount"] >= 700
+# 条件3：数量≥2 或者 会员金卡
+cond3 = (analysis["quantity"] >= 2) | (analysis["member_level"] == "金卡")
+
+# 组合总掩码：全部同时满足
+mask = cond1 & cond2 & cond3
+
+# 筛选、指定列、金额降序
+focus_order = analysis.loc[mask, ["order_id", "region", "product", "quantity", "member_level", "final_amount"]]
+focus_order = focus_order.sort_values("final_amount", ascending=False)
+print(focus_order)
+print()
+
+def add_order_level(df):
+    # 复制副本，不修改原表
+    df_copy = df.copy()
+    # 嵌套np.where分层判断订单等级
+    df_copy["order_level"] = np.where(
+        df_copy["final_amount"] >= 2000, "战略订单",
+        np.where(df_copy["final_amount"] >= 1000, "重点订单", "普通订单")
+    )
+    return df_copy
+
+# pipe调用函数生成新表
+leveled_orders = analysis.pipe(add_order_level)
+
+# 统计各等级订单数量
+level_count = leveled_orders["order_level"].value_counts()
+print("各等级订单数量：")
+print(level_count)
+print()
+
+region_report = (
+    analysis
+    .pipe(add_order_level)                # 步骤1：添加订单等级
+    .query("final_amount >= 500")         # 步骤2：过滤实付500以上订单
+    .groupby(["region", "order_level"])   # 步骤3：双维度分组
+    .agg(
+        order_count = ("order_id", "count"),
+        quantity_sum = ("quantity", "sum"),
+        revenue_sum = ("final_amount", "sum"),
+        revenue_mean = ("final_amount", "mean")
+    )                                     # 步骤4：聚合指标
+    .sort_values("revenue_sum", ascending=False) # 步骤5：总营收降序
+    .reset_index()
+)
+print(region_report)
+print()
+
+# 1. 各销售总成交金额
+sales_total = analysis.groupby("salesperson")["final_amount"].sum().reset_index()
+sales_total = sales_total.sort_values("final_amount", ascending=False)
+top_sales = sales_total.iloc[0]["salesperson"]
+top_total = sales_total.iloc[0]["final_amount"]
+
+# 2. 该销售各区域成交金额
+person_region = analysis[analysis["salesperson"] == top_sales].groupby("region")["final_amount"].sum().reset_index()
+person_region = person_region.sort_values("final_amount", ascending=False)
+top_region = person_region.iloc[0]["region"]
+region_amt = person_region.iloc[0]["final_amount"]
+
+# 3. 区域金额占此人总金额比例
+ratio = (region_amt / top_total * 100).round(2)
+
+# 输出结果
+print(f"业绩最高销售：{top_sales}")
+print(f"该销售总成交金额：{top_total:.2f}")
+print(f"核心成交区域：{top_region}")
+print(f"核心区域成交金额：{region_amt:.2f}")
+print(f"核心区域业绩占比：{ratio}%")
+
+# 业务结论
+print(f"\n业务结论：销售{top_sales}是团队业绩第一名，其业绩高度依赖{top_region}区域，该区域贡献了{ratio}%的个人总营收，可加大该区域资源投放。")
