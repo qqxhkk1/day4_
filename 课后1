@@ -1,0 +1,57 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.impute import SimpleImputer
+
+url = "https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv"
+df_raw = pd.read_csv(url)
+df = df_raw.copy()
+print("=== 原始数据概览 ===")
+print(f"数据形状：{df.shape}")
+print("缺失值统计：")
+print(df.isnull().sum().sort_values(ascending=False))
+print("重复行数：", df.duplicated().sum())
+
+dup_num = df.duplicated().sum()
+if dup_num > 0:
+    df = df.drop_duplicates()
+print(f"去重后剩余行数：{df.shape[0]}")
+
+df = df.drop(columns=["Cabin"])
+
+embark_mode = df["Embarked"].mode()[0]
+df["Embarked"] = df["Embarked"].fillna(embark_mode)
+
+age_median = df["Age"].median()
+df["Age_fill_median"] = df["Age"].fillna(age_median)
+
+df["Age_interp"] = df["Age"].interpolate(method="linear")
+
+Q1 = df["Fare"].quantile(0.25)
+Q3 = df["Fare"].quantile(0.75)
+IQR = Q3 - Q1
+upper_bound = Q3 + 1.5 * IQR
+outlier = df[df["Fare"] > upper_bound]
+print(f"票价异常值数量：{len(outlier)}")
+df_clean = df[df["Fare"] <= upper_bound].copy()
+
+dtype_map = {
+    "PassengerId": "int32",
+    "Survived": "int8",
+    "Pclass": "category",
+    "Sex": "category",
+    "Age_fill_median": "float32",
+    "SibSp": "int8",
+    "Parch": "int8",
+    "Fare": "float32"
+}
+df_clean = df_clean.astype(dtype_map)
+
+df_clean["Sex_code"] = df_clean["Sex"].map({"male": 0, "female": 1})
+df_clean = pd.get_dummies(df_clean, columns=["Embarked"], prefix="Embark")
+
+df_clean["Title"] = df_clean["Name"].str.extract(r" ([A-Za-z]+)\.")
+
+print("\n=== 清洗后数据信息 ===")
+print(df_clean.info())
+print("清洗后缺失值总数：", df_clean.isnull().sum().sum())
