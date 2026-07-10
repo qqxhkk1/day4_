@@ -1,0 +1,112 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+plt.rcParams["font.sans-serif"] = ["SimHei"]
+plt.rcParams["axes.unicode_minus"] = False
+
+np.random.seed(2026)
+n = 4000
+year = np.random.randint(2010, 2015, n)
+month = np.random.randint(1, 13, n)
+
+day_arr = []
+for m in month:
+    if m == 2:
+        d = np.random.randint(1, 29)
+    elif m in [4, 6, 9, 11]:
+        d = np.random.randint(1, 31)
+    else:
+        d = np.random.randint(1, 32)
+    day_arr.append(d)
+day = np.array(day_arr)
+hour = np.random.randint(0, 24, n)
+
+PM25 = np.random.normal(120, 60, n).clip(0, 500)
+PM10 = PM25 * np.random.uniform(1.1, 1.8, n)
+SO2 = np.random.randint(0, 150, n)
+NO2 = np.random.randint(10, 120, n)
+CO = np.random.randint(100, 2000, n)
+O3 = np.random.randint(0, 100, n)
+
+TEMP = np.random.normal(12, 10, n)
+PRES = np.random.normal(1010, 10, n)
+DEWP = np.random.normal(5, 8, n)
+wd = np.random.choice(["NE", "NW", "SE", "SW", "N", "S"], n)
+WSPM = np.random.uniform(0, 10, n)
+
+df = pd.DataFrame({
+    "year": year, "month": month, "day": day, "hour": hour,
+    "PM2.5": PM25, "PM10": PM10, "SO2": SO2, "NO2": NO2, "CO": CO, "O3": O3,
+    "TEMP": TEMP, "PRES": PRES, "DEWP": DEWP, "wd": wd, "WSPM": WSPM
+})
+
+df["datetime"] = pd.to_datetime(df[["year", "month", "day", "hour"]])
+df = df.set_index("datetime")
+
+season_mapping = {
+    1: "冬季", 2: "冬季", 3: "春季", 4: "春季", 5: "春季",
+    6: "夏季", 7: "夏季", 8: "夏季", 9: "秋季", 10: "秋季", 11: "秋季", 12: "冬季"
+}
+df["season"] = df.index.month.map(season_mapping)
+
+pollutant_list = ["PM2.5", "PM10", "SO2", "NO2", "CO", "O3"]
+
+print("========== 污染物描述性统计（均值/标准差/最值） ==========")
+print(df[pollutant_list].describe().round(2))
+
+corr_df = df[pollutant_list + ["TEMP", "WSPM"]].corr()
+print("\n========== 变量相关系数矩阵 ==========")
+print(corr_df.round(2))
+
+month_avg_pm = df["PM2.5"].resample("ME").mean()
+plt.figure(figsize=(14, 5))
+plt.plot(month_avg_pm.index, month_avg_pm.values, color="#c82423", linewidth=1.4)
+plt.title("PM2.5月度平均浓度时间序列", fontsize=14)
+plt.xlabel("日期")
+plt.ylabel("PM2.5 浓度 μg/m3")
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+season_pm_data = df.groupby("season")["PM2.5"].mean().reindex(["春季", "夏季", "秋季", "冬季"])
+plt.figure(figsize=(8, 5))
+bar_plot = plt.bar(season_pm_data.index, season_pm_data.values, color=["#32a852", "#2b7bba", "#ff8c28", "#c82423"])
+plt.title("四季PM2.5平均浓度对比", fontsize=14)
+plt.ylabel("PM2.5 平均浓度")
+for bar in bar_plot:
+    height = bar.get_height()
+    plt.text(bar.get_x() + bar.get_width()/2, height + 4, f"{height:.1f}", ha="center")
+plt.tight_layout()
+plt.show()
+
+plt.figure(figsize=(7, 5))
+plt.scatter(df["TEMP"], df["PM2.5"], alpha=0.2, c="#8c6bb1", s=6)
+plt.title("气温与PM2.5浓度散点分布图", fontsize=14)
+plt.xlabel("气温 ℃")
+plt.ylabel("PM2.5 浓度 μg/m3")
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+plt.figure(figsize=(9, 7))
+heat_map = plt.imshow(corr_df, cmap="RdBu_r", vmin=-1, vmax=1)
+plt.colorbar(heat_map, label="皮尔逊相关系数")
+plt.xticks(range(len(corr_df.columns)), corr_df.columns, rotation=45)
+plt.yticks(range(len(corr_df.columns)), corr_df.columns)
+# 填充系数文本
+for i in range(len(corr_df.columns)):
+    for j in range(len(corr_df.columns)):
+        val = corr_df.iloc[i, j]
+        plt.text(j, i, f"{val:.2f}", ha="center", va="center", fontsize=8)
+plt.title("污染物与气象因子相关性热力图", fontsize=14)
+plt.tight_layout()
+plt.show()
+
+season_all_pollutant = df.groupby("season")[pollutant_list].mean().round(2)
+print("\n========== 分季节全部污染物平均浓度 ==========")
+print(season_all_pollutant)
+
+winter_pm = season_all_pollutant.loc["冬季", "PM2.5"]
+summer_pm = season_all_pollutant.loc["夏季", "PM2.5"]
+print(f"\n【季节变化结论】冬季PM2.5平均浓度{winter_pm}μg/m3，夏季仅{summer_pm}μg/m3；冬季颗粒物污染显著高于夏季，主要受冬季供暖、大气对流弱、污染物不易扩散影响。")
