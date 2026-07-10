@@ -22,3 +22,12 @@ print(f"数据行数：{rows}，列数：{cols}")
 # 全部列名
 print("所有列名：", orders.columns.tolist())
 print()
+
+# 单列region
+s_region = orders["region"]
+print("region单列类型：", type(s_region))
+
+# 多列
+df_part = orders[["order_id", "product", "quantity"]]
+print("三列数据类型：", type(df_part))
+print()
